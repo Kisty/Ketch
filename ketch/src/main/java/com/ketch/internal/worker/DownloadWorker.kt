@@ -152,14 +152,17 @@ internal class DownloadWorker(
                 }
             )
 
+            val total = if (totalLength > 0) totalLength else File(dirPath, fileName).length()
+
             downloadDao.find(id)?.copy(
-                totalBytes = totalLength,
+                totalBytes = total,
+                downloadedBytes = total,
                 status = Status.SUCCESS.toString(),
                 lastModified = System.currentTimeMillis()
             )?.let { downloadDao.update(it) }
 
             downloadNotificationManager?.sendDownloadSuccessNotification(
-                totalLength = if (totalLength > 0) totalLength else File(dirPath, fileName).length()
+                totalLength = total
             )
             Result.success()
         } catch (e: Exception) {
