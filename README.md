@@ -178,13 +178,14 @@ dependencies {
   )
   ```
   
-- Download config: Provides custom connect and read timeout
+- Download config: Provides custom connect & read timeout and disabling auto-retry
 
   ```Kotlin
     ketch = Ketch.builder().setDownloadConfig(
       config = DownloadConfig(
         connectTimeOutInMs = 20000L, //Default: 10000L
-        readTimeOutInMs = 15000L //Default: 10000L
+        readTimeOutInMs = 15000L, //Default: 10000L
+        autoRetry = true //Default: true
       )
     ).build(this)
   ```

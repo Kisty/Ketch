@@ -74,7 +74,7 @@ import java.util.concurrent.TimeUnit
  *
  * JOURNEY OF SINGLE DOWNLOAD FILE:
  *
- * [Status.QUEUED] -> [Status.STARTED] -> [Status.PROGRESS] -> Download in progress
+ * [Status.QUEUED] or [Status.RETRY_QUEUED] -> [Status.STARTED] -> [Status.PROGRESS] -> Download in progress
  * Terminating states: [Status.PAUSED], [Status.CANCELLED], [Status.FAILED], [Status.SUCCESS]
  *
  * @property context Application context
