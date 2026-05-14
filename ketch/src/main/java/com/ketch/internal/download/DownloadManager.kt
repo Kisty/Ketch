@@ -62,10 +62,14 @@ internal class DownloadManager(
                         when (workInfo.state) {
                             WorkInfo.State.ENQUEUED -> {
                                 val downloadEntity = findDownloadEntityFromUUID(workInfo.id)
-                                logger.log(
-                                    msg = "Download Queued. FileName: ${downloadEntity?.fileName}, " +
+                                val msg = if (workInfo.runAttemptCount > 0) {
+                                    "Download Retrying (Attempt ${workInfo.runAttemptCount}). FileName: ${downloadEntity?.fileName}, " +
                                             "ID: ${downloadEntity?.id}"
-                                )
+                                } else {
+                                    "Download Queued. FileName: ${downloadEntity?.fileName}, " +
+                                            "ID: ${downloadEntity?.id}"
+                                }
+                                logger.log(msg = msg)
                             }
 
                             WorkInfo.State.RUNNING -> {
@@ -138,6 +142,7 @@ internal class DownloadManager(
         val inputDataBuilder = Data.Builder()
             .putString(DownloadConst.KEY_DOWNLOAD_REQUEST, downloadRequest.toJson())
             .putString(DownloadConst.KEY_NOTIFICATION_CONFIG, notificationConfig.toJson())
+            .putString(DownloadConst.KEY_DOWNLOAD_CONFIG, downloadConfig.toJson())
 
         val inputData = inputDataBuilder.build()
 

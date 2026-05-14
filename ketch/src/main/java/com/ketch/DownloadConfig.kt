@@ -6,5 +6,9 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class DownloadConfig(
     val connectTimeOutInMs: Long = DownloadConst.DEFAULT_VALUE_CONNECT_TIMEOUT_MS,
-    val readTimeOutInMs: Long = DownloadConst.DEFAULT_VALUE_READ_TIMEOUT_MS
+    val readTimeOutInMs: Long = DownloadConst.DEFAULT_VALUE_READ_TIMEOUT_MS,
+    /**
+     * Auto-retry download when it fails. Default true.
+     */
+    val autoRetry: Boolean = true
 )

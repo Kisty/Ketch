@@ -6,6 +6,7 @@ import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import com.google.common.truth.Truth.assertThat
+import com.ketch.DownloadConfig
 import com.ketch.NotificationConfig
 import com.ketch.Status
 import com.ketch.internal.database.DatabaseInstance
@@ -125,11 +126,14 @@ internal class DownloadWorkerTest {
             anyConstructed<DownloadTask>().download(any(), any(), any())
         } throws RuntimeException("Download failed")
 
+        val downloadConfig = DownloadConfig(autoRetry = false)
+
         val worker = TestListenableWorkerBuilder<DownloadWorker>(
             context = context,
             inputData = workDataOf(
                 DownloadConst.KEY_DOWNLOAD_REQUEST to downloadRequest.toJson(),
-                DownloadConst.KEY_NOTIFICATION_CONFIG to notificationConfig.toJson()
+                DownloadConst.KEY_NOTIFICATION_CONFIG to notificationConfig.toJson(),
+                DownloadConst.KEY_DOWNLOAD_CONFIG to downloadConfig.toJson()
             )
         ).build()
 
@@ -191,6 +195,88 @@ internal class DownloadWorkerTest {
 
         coVerify(timeout = 2000) {
             downloadDao.update(match { it.status == Status.CANCELLED.toString() })
+        }
+    }
+
+    @Test
+    fun `doWork on IOException with autoRetry sets status RETRY_QUEUED and returns retry`() = runBlocking {
+        coEvery {
+            anyConstructed<DownloadTask>().download(any(), any(), any())
+        } throws java.io.IOException("Network error")
+
+        val downloadConfig = DownloadConfig(autoRetry = true)
+
+        val worker = TestListenableWorkerBuilder<DownloadWorker>(
+            context = context,
+            inputData = workDataOf(
+                DownloadConst.KEY_DOWNLOAD_REQUEST to downloadRequest.toJson(),
+                DownloadConst.KEY_NOTIFICATION_CONFIG to notificationConfig.toJson(),
+                DownloadConst.KEY_DOWNLOAD_CONFIG to downloadConfig.toJson()
+            )
+        ).build()
+
+        val result = worker.doWork()
+
+        assertThat(result).isEqualTo(ListenableWorker.Result.retry())
+
+        coVerify(timeout = 2000) {
+            downloadDao.update(match {
+                it.status == Status.RETRY_QUEUED.toString() && it.failureReason == "Network error"
+            })
+        }
+    }
+
+    @Test
+    fun `doWork with default config retries on IOException`() = runBlocking {
+        coEvery {
+            anyConstructed<DownloadTask>().download(any(), any(), any())
+        } throws java.io.IOException("Default retry error")
+
+        // No DownloadConst.KEY_DOWNLOAD_CONFIG provided
+        val worker = TestListenableWorkerBuilder<DownloadWorker>(
+            context = context,
+            inputData = workDataOf(
+                DownloadConst.KEY_DOWNLOAD_REQUEST to downloadRequest.toJson(),
+                DownloadConst.KEY_NOTIFICATION_CONFIG to notificationConfig.toJson()
+            )
+        ).build()
+
+        val result = worker.doWork()
+
+        assertThat(result).isEqualTo(ListenableWorker.Result.retry())
+
+        coVerify(timeout = 2000) {
+            downloadDao.update(match {
+                it.status == Status.RETRY_QUEUED.toString() && it.failureReason == "Default retry error"
+            })
+        }
+    }
+
+    @Test
+    fun `doWork with autoRetry false fails on IOException`() = runBlocking {
+        coEvery {
+            anyConstructed<DownloadTask>().download(any(), any(), any())
+        } throws java.io.IOException("No retry error")
+
+        val downloadConfig = DownloadConfig(autoRetry = false)
+
+        val worker = TestListenableWorkerBuilder<DownloadWorker>(
+            context = context,
+            inputData = workDataOf(
+                DownloadConst.KEY_DOWNLOAD_REQUEST to downloadRequest.toJson(),
+                DownloadConst.KEY_NOTIFICATION_CONFIG to notificationConfig.toJson(),
+                DownloadConst.KEY_DOWNLOAD_CONFIG to downloadConfig.toJson()
+            )
+        ).build()
+
+        val result = worker.doWork()
+
+        assertThat(result).isInstanceOf(ListenableWorker.Result.Failure::class.java)
+
+        coVerify(timeout = 2000) {
+            downloadDao.update(match {
+                it.status == Status.FAILED.toString() && it.failureReason == "No retry error"
+            })
         }
     }
 }

@@ -2,6 +2,7 @@ package com.ketch.internal.worker
 
 import android.content.Context
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.ketch.Status
@@ -16,8 +17,9 @@ import com.ketch.internal.utils.FileUtil
 import com.ketch.internal.utils.UserAction
 import com.ketch.internal.utils.WorkUtil
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import java.io.File
 
 internal class DownloadWorker(
@@ -33,6 +35,26 @@ internal class DownloadWorker(
     private var downloadNotificationManager: DownloadNotificationManager? = null
     private val downloadDao = DatabaseInstance.getInstance(context).downloadDao()
 
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        val downloadRequest =
+            WorkUtil.jsonToDownloadRequest(
+                inputData.getString(DownloadConst.KEY_DOWNLOAD_REQUEST) ?: ""
+            )
+
+        val notificationConfig =
+            WorkUtil.jsonToNotificationConfig(
+                inputData.getString(DownloadConst.KEY_NOTIFICATION_CONFIG) ?: ""
+            )
+
+        val notificationManager = DownloadNotificationManager(
+            context = context,
+            notificationConfig = notificationConfig,
+            requestId = downloadRequest.id,
+            fileName = downloadRequest.fileName
+        )
+        return notificationManager.sendUpdateNotification()!!
+    }
+
     override suspend fun doWork(): Result {
 
         val downloadRequest =
@@ -46,6 +68,11 @@ internal class DownloadWorker(
         val notificationConfig =
             WorkUtil.jsonToNotificationConfig(
                 inputData.getString(DownloadConst.KEY_NOTIFICATION_CONFIG) ?: ""
+            )
+
+        val downloadConfig =
+            WorkUtil.jsonToDownloadConfig(
+                inputData.getString(DownloadConst.KEY_DOWNLOAD_CONFIG) ?: ""
             )
 
         val id = downloadRequest.id
@@ -67,10 +94,12 @@ internal class DownloadWorker(
         val downloadService = RetrofitInstance.getDownloadService()
 
         return try {
-            downloadNotificationManager?.sendUpdateNotification()?.let {
-                setForeground(
-                    it
-                )
+            if (!isStopped) {
+                downloadNotificationManager?.sendUpdateNotification()?.let {
+                    setForeground(
+                        it
+                    )
+                }
             }
 
             val latestETag =
@@ -139,15 +168,18 @@ internal class DownloadWorker(
                             DownloadConst.KEY_PROGRESS to progress
                         )
                     )
-                    downloadNotificationManager?.sendUpdateNotification(
-                        progress = progress,
-                        speedInBPerMs = speed,
-                        length = length,
-                        update = true
-                    )?.let {
-                        setForeground(
-                            it
-                        )
+
+                    if (!isStopped) {
+                        downloadNotificationManager?.sendUpdateNotification(
+                            progress = progress,
+                            speedInBPerMs = speed,
+                            length = length,
+                            update = true
+                        )?.let {
+                            setForeground(
+                                it
+                            )
+                        }
                     }
                 }
             )
@@ -166,8 +198,14 @@ internal class DownloadWorker(
             )
             Result.success()
         } catch (e: Exception) {
-            GlobalScope.launch {
-                if (e is CancellationException) {
+            withContext(NonCancellable + Dispatchers.IO) {
+                if (e !is CancellationException && downloadConfig.autoRetry) {
+                    downloadDao.find(id)?.copy(
+                        failureReason = e.message ?: "",
+                        lastModified = System.currentTimeMillis(),
+                        status = Status.RETRY_QUEUED.toString()
+                    )?.let { downloadDao.update(it) }
+                } else if (e is CancellationException) {
                     if (downloadDao.find(id)?.userAction == UserAction.PAUSE.toString()) {
 
                         downloadDao.find(id)?.copy(
@@ -216,9 +254,13 @@ internal class DownloadWorker(
                     }
                 }
             }
-            Result.failure(
-                workDataOf(ExceptionConst.KEY_EXCEPTION to e.message)
-            )
+            if (e !is CancellationException && downloadConfig.autoRetry) {
+                Result.retry()
+            } else {
+                Result.failure(
+                    workDataOf(ExceptionConst.KEY_EXCEPTION to e.message)
+                )
+            }
         }
 
     }
