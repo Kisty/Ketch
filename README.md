@@ -30,6 +30,7 @@ Ketch is a simple, powerful, customisable file downloader library for Android bu
 - Ketch is simple and very easy to use.
 - Ketch provide notification for each download providing download info (speed, time left, total size, progress).
 - Ketch includes option to pause, resume, retry and cancel download from notification.
+- Ketch automatically schedules retrying the download if it fails.
 
 <p align="center">
   <img height="200" alt = "High level design" src=https://raw.githubusercontent.com/khushpanchal/Ketch/master/assets/Sample_notification.png >
