@@ -15,6 +15,9 @@ internal interface DownloadDao {
     @Update
     suspend fun update(entity: DownloadEntity)
 
+    @Query("SELECT * FROM downloads WHERE url = :url AND path = :path")
+    suspend fun findByUrlAndPath(url: String, path: String): DownloadEntity?
+
     @Query("SELECT * FROM downloads WHERE id = :id")
     suspend fun find(id: Int): DownloadEntity?
 

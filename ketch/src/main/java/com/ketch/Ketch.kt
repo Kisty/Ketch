@@ -13,6 +13,7 @@ import com.ketch.internal.utils.FileUtil
 import com.ketch.internal.utils.NotificationConst
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -164,9 +165,11 @@ class Ketch private constructor(
         RetrofitInstance.getDownloadService(okHttpClient = okHttpClient)
     }
 
+    private val downloadDao = DatabaseInstance.getInstance(context).downloadDao()
+
     private val downloadManager = DownloadManager(
         context = context,
-        downloadDao = DatabaseInstance.getInstance(context).downloadDao(),
+        downloadDao = downloadDao,
         workManager = WorkManager.getInstance(context.applicationContext),
         downloadConfig = downloadConfig,
         notificationConfig = notificationConfig,
@@ -194,15 +197,17 @@ class Ketch private constructor(
         headers: HashMap<String, String> = hashMapOf(),
         supportPauseResume: Boolean = true,
     ): Int {
-        val downloadRequest = prepareDownloadRequest(
-            url = url,
-            path = path,
-            fileName = fileName,
-            tag = tag,
-            headers = headers,
-            metaData = metaData,
-            supportPauseResume = supportPauseResume,
-        )
+        val downloadRequest = runBlocking {
+            prepareDownloadRequest(
+                url = url,
+                path = path,
+                fileName = fileName,
+                tag = tag,
+                headers = headers,
+                metaData = metaData,
+                supportPauseResume = supportPauseResume,
+            )
+        }
         downloadManager.downloadAsync(downloadRequest)
         return downloadRequest.id
     }
@@ -543,7 +548,7 @@ class Ketch private constructor(
      */
     suspend fun getDownloadModelByStatuses(statuses: List<Status>) = downloadManager.getDownloadModelByStatuses(statuses)
 
-    private fun prepareDownloadRequest(
+    private suspend fun prepareDownloadRequest(
         url: String,
         path: String,
         fileName: String,
@@ -556,10 +561,17 @@ class Ketch private constructor(
             "Missing ${if (url.isEmpty()) "url" else if (path.isEmpty()) "path" else "fileName"}"
         }
 
-        // This will create a temp file which will be renamed after successful download.
-        // This will also make sure each file name is unique.
-        val newFileName = FileUtil.resolveNamingConflicts(fileName, path)
-        FileUtil.createTempFileIfNotExists(path, newFileName)
+        val existingDownload = downloadDao.findByUrlAndPath(url, path)
+
+        val newFileName = if (existingDownload != null) {
+            existingDownload.fileName
+        } else {
+            // This will create a temp file which will be renamed after successful download.
+            // This will also make sure each file name is unique.
+            val resolvedName = FileUtil.resolveNamingConflicts(fileName, path)
+            FileUtil.createTempFileIfNotExists(path, resolvedName)
+            resolvedName
+        }
 
         val downloadRequest = DownloadRequest(
             url = url,
