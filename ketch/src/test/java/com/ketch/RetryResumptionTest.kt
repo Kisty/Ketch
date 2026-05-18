@@ -30,6 +30,11 @@ class RetryResumptionTest {
 
     @Before
     fun setUp() {
+        // Reset Ketch singleton
+        val field = Ketch::class.java.getDeclaredField("ketchInstance")
+        field.isAccessible = true
+        field.set(null, null)
+
         context = ApplicationProvider.getApplicationContext()
         WorkManagerTestInitHelper.initializeTestWorkManager(context)
         

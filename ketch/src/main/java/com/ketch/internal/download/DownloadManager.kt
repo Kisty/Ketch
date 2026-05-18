@@ -113,6 +113,16 @@ internal class DownloadManager(
                                             "ID: ${downloadEntity?.id}, " +
                                             "Reason: ${downloadEntity?.failureReason}"
                                 )
+                                downloadEntity?.let {
+                                    downloadDao.update(it.copy(status = Status.FAILED.toString()))
+                                    if (downloadConfig.autoRetry &&
+                                        it.userAction != UserAction.CANCEL.toString() &&
+                                        it.userAction != UserAction.PAUSE.toString() &&
+                                        !isAnotherActiveOrSuccessful(it)
+                                    ) {
+                                        retryAsync(it.id)
+                                    }
+                                }
                             }
 
                             WorkInfo.State.CANCELLED -> {
@@ -210,6 +220,10 @@ internal class DownloadManager(
     private suspend fun resume(id: Int) {
         val downloadEntity = downloadDao.find(id)
         if (downloadEntity != null) {
+            if (isAnotherActiveOrSuccessful(downloadEntity)) {
+                logger.log(msg = "Resume skipped for ID: $id. Another entry for same file is already active or successful.")
+                return
+            }
             downloadDao.update(
                 downloadEntity.copy(
                     userAction = UserAction.RESUME.toString(),
@@ -275,6 +289,10 @@ internal class DownloadManager(
     private suspend fun retry(id: Int) {
         val downloadEntity = downloadDao.find(id)
         if (downloadEntity != null) {
+            if (isAnotherActiveOrSuccessful(downloadEntity)) {
+                logger.log(msg = "Retry skipped for ID: $id. Another entry for same file is already active or successful.")
+                return
+            }
             downloadDao.update(
                 downloadEntity.copy(
                     userAction = UserAction.RETRY.toString(),
@@ -297,6 +315,22 @@ internal class DownloadManager(
 
     private suspend fun findDownloadEntityFromUUID(uuid: UUID): DownloadEntity? {
         return downloadDao.getAllEntity().find { it.uuid == uuid.toString() }
+    }
+
+    private suspend fun isAnotherActiveOrSuccessful(entity: DownloadEntity): Boolean {
+        val activeStatuses = listOf(
+            Status.QUEUED.name,
+            Status.RETRY_QUEUED.name,
+            Status.STARTED.name,
+            Status.PROGRESS.name,
+            Status.SUCCESS.name
+        )
+        return downloadDao.countOtherActiveOrSuccessful(
+            entity.url,
+            entity.path,
+            entity.id,
+            activeStatuses
+        ) > 0
     }
 
     fun resumeAsync(id: Int) {

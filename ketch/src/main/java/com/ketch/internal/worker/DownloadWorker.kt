@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.ketch.Status
 import com.ketch.internal.database.DatabaseInstance
+import com.ketch.internal.database.DownloadEntity
 import com.ketch.internal.download.DownloadTask
 import com.ketch.internal.download.ApiResponseHeaderChecker
 import com.ketch.internal.network.RetrofitInstance
@@ -199,12 +200,23 @@ internal class DownloadWorker(
             Result.success()
         } catch (e: Exception) {
             withContext(NonCancellable + Dispatchers.IO) {
+                val entity = downloadDao.find(id)
                 if (e !is CancellationException && downloadConfig.autoRetry) {
-                    downloadDao.find(id)?.copy(
-                        failureReason = e.message ?: "",
-                        lastModified = System.currentTimeMillis(),
-                        status = Status.RETRY_QUEUED.toString()
-                    )?.let { downloadDao.update(it) }
+                    if (entity != null && isAnotherActiveOrSuccessful(entity)) {
+                        downloadDao.update(
+                            entity.copy(
+                                status = Status.FAILED.toString(),
+                                failureReason = "Skipped retry. Another entry for same file is already active or successful.",
+                                lastModified = System.currentTimeMillis()
+                            )
+                        )
+                    } else {
+                        downloadDao.find(id)?.copy(
+                            failureReason = e.message ?: "",
+                            lastModified = System.currentTimeMillis(),
+                            status = Status.RETRY_QUEUED.toString()
+                        )?.let { downloadDao.update(it) }
+                    }
                 } else if (e is CancellationException) {
                     if (downloadDao.find(id)?.userAction == UserAction.PAUSE.toString()) {
 
@@ -255,7 +267,14 @@ internal class DownloadWorker(
                 }
             }
             if (e !is CancellationException && downloadConfig.autoRetry) {
-                Result.retry()
+                val entity = downloadDao.find(id)
+                if (entity != null && isAnotherActiveOrSuccessful(entity)) {
+                    Result.failure(
+                        workDataOf(ExceptionConst.KEY_EXCEPTION to "Skipped retry. Another entry active.")
+                    )
+                } else {
+                    Result.retry()
+                }
             } else {
                 Result.failure(
                     workDataOf(ExceptionConst.KEY_EXCEPTION to e.message)
@@ -263,6 +282,22 @@ internal class DownloadWorker(
             }
         }
 
+    }
+
+    private suspend fun isAnotherActiveOrSuccessful(entity: DownloadEntity): Boolean {
+        val activeStatuses = listOf(
+            Status.QUEUED.name,
+            Status.RETRY_QUEUED.name,
+            Status.STARTED.name,
+            Status.PROGRESS.name,
+            Status.SUCCESS.name
+        )
+        return downloadDao.countOtherActiveOrSuccessful(
+            entity.url,
+            entity.path,
+            entity.id,
+            activeStatuses
+        ) > 0
     }
 
 }
