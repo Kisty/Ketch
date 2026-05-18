@@ -103,17 +103,40 @@ internal class DownloadWorker(
                 }
             }
 
-            val latestETag =
+            val headerChecker =
                 ApiResponseHeaderChecker(downloadRequest.url, downloadService, headers)
-                    .getHeaderValue(DownloadConst.ETAG_HEADER) ?: ""
+            val latestETag = headerChecker.getHeaderValue(DownloadConst.ETAG_HEADER) ?: ""
+            val latestContentLength =
+                headerChecker.getHeaderValue(DownloadConst.CONTENT_LENGTH)?.toLongOrNull() ?: 0L
 
-            val existingETag = downloadDao.find(id)?.eTag ?: ""
+            val existingEntity = downloadDao.find(id)
+            val existingETag = existingEntity?.eTag ?: ""
+            val existingTotalBytes = existingEntity?.totalBytes ?: 0L
+            val existingStatus = existingEntity?.status ?: ""
 
-            if (latestETag != existingETag) {
+            // Check for early completion
+            if (existingStatus == Status.SUCCESS.toString() &&
+                File(dirPath, fileName).exists() &&
+                (latestETag.isEmpty() || latestETag == existingETag) &&
+                (latestContentLength == 0L || latestContentLength == existingTotalBytes)
+            ) {
+                downloadNotificationManager?.sendDownloadSuccessNotification(
+                    totalLength = existingTotalBytes
+                )
+                return Result.success()
+            }
+
+            // Check for server-side updates (ETag or Content-Length changed)
+            val eTagChanged = latestETag.isNotEmpty() && existingETag.isNotEmpty() && latestETag != existingETag
+            val sizeChanged = latestContentLength != 0L && existingTotalBytes != 0L && latestContentLength != existingTotalBytes
+
+            if (eTagChanged || sizeChanged || (latestETag.isNotEmpty() && existingETag.isEmpty())) {
                 FileUtil.deleteFileIfExists(path = dirPath, name = fileName)
                 FileUtil.createTempFileIfNotExists(path = dirPath, fileName = fileName)
-                downloadDao.find(id)?.copy(
+                existingEntity?.copy(
                     eTag = latestETag,
+                    totalBytes = latestContentLength,
+                    downloadedBytes = 0,
                     lastModified = System.currentTimeMillis()
                 )?.let { downloadDao.update(it) }
             }
