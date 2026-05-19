@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.UUID
 
 internal class DownloadManager(
@@ -53,8 +54,9 @@ internal class DownloadManager(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
 
     init {
-
         scope.launch {
+            syncDbWithDisk()
+
             // Observe work infos, only for logging purpose
             workManager.getWorkInfosByTagFlow(DownloadConst.TAG_DOWNLOAD).flowOn(Dispatchers.IO)
                 .collectLatest { workInfos ->
@@ -167,7 +169,19 @@ internal class DownloadManager(
             .build()
 
         // Checks if download id already present in database
-        if (downloadDao.find(downloadRequest.id) != null) {
+        val existing = downloadDao.find(downloadRequest.id)
+        if (existing != null) {
+
+            // Sync with disk: if SUCCESS but file missing, reset status
+            if (existing.status == Status.SUCCESS.name && !File(existing.path, existing.fileName).exists()) {
+                downloadDao.update(
+                    existing.copy(
+                        status = Status.FAILED.name,
+                        failureReason = "File missing from disk",
+                        lastModified = System.currentTimeMillis()
+                    )
+                )
+            }
 
             downloadDao.find(downloadRequest.id)?.copy(
                 userAction = UserAction.START.toString(),
@@ -331,6 +345,36 @@ internal class DownloadManager(
             entity.id,
             activeStatuses
         ) > 0
+    }
+
+    private suspend fun syncDbWithDisk() {
+        val allEntities = downloadDao.getAllEntity()
+        syncAndMapListNonNull(allEntities)
+    }
+
+    private suspend fun syncAndMap(entity: DownloadEntity?): DownloadModel? {
+        if (entity == null) return null
+        if (entity.status == Status.SUCCESS.name) {
+            val file = File(entity.path, entity.fileName)
+            if (!file.exists()) {
+                val updated = entity.copy(
+                    status = Status.FAILED.name,
+                    failureReason = "File missing from disk",
+                    lastModified = System.currentTimeMillis()
+                )
+                downloadDao.update(updated)
+                return updated.toDownloadModel()
+            }
+        }
+        return entity.toDownloadModel()
+    }
+
+    private suspend fun syncAndMapList(entities: List<DownloadEntity?>): List<DownloadModel?> {
+        return entities.map { syncAndMap(it) }
+    }
+
+    private suspend fun syncAndMapListNonNull(entities: List<DownloadEntity>): List<DownloadModel> {
+        return entities.map { syncAndMap(it)!! }
     }
 
     fun resumeAsync(id: Int) {
@@ -503,47 +547,38 @@ internal class DownloadManager(
 
     fun observeAllDownloads(): Flow<List<DownloadModel>> {
         return downloadDao.getAllEntityFlow().distinctUntilChanged().map { entityList ->
-            entityList.map { entity ->
-                entity.toDownloadModel()
-            }
+            syncAndMapListNonNull(entityList)
         }
     }
 
     fun observeDownloadById(id: Int): Flow<DownloadModel?> {
         return downloadDao.getEntityByIdFlow(id).distinctUntilChanged().map { entity ->
-            entity?.toDownloadModel()
+            syncAndMap(entity)
         }
     }
 
     fun observeDownloadsByTag(tag: String): Flow<List<DownloadModel>> {
         return downloadDao.getAllEntityByTagFlow(tag).distinctUntilChanged().map { entityList ->
-            entityList.map { entity ->
-                entity.toDownloadModel()
-            }
+            syncAndMapListNonNull(entityList)
         }
     }
 
     fun observeDownloadsByStatus(status: Status): Flow<List<DownloadModel>> {
         return downloadDao.getAllEntityByStatusFlow(status.name).distinctUntilChanged().map { entityList ->
-            entityList.map { entity ->
-                entity.toDownloadModel()
-            }
+            syncAndMapListNonNull(entityList)
         }
     }
 
     fun observeDownloadsByIds(ids: List<Int>): Flow<List<DownloadModel?>> {
         return downloadDao.getAllEntityByIdsFlow(ids).distinctUntilChanged().map { entityList ->
-            ids.map { id ->
-                entityList.find { it?.id == id }?.toDownloadModel()
-            }
+            val orderedEntities = ids.map { id -> entityList.find { it?.id == id } }
+            syncAndMapList(orderedEntities)
         }
     }
 
     fun observeDownloadsByTags(tags: List<String>): Flow<List<DownloadModel>> {
         return downloadDao.getAllEntityByTagsFlow(tags).distinctUntilChanged().map { entityList ->
-            entityList.map { entity ->
-                entity.toDownloadModel()
-            }
+            syncAndMapListNonNull(entityList)
         }
     }
 
@@ -553,55 +588,43 @@ internal class DownloadManager(
                 it.name
             }
         ).distinctUntilChanged().map { entityList ->
-            entityList.map { entity ->
-                entity.toDownloadModel()
-            }
+            syncAndMapListNonNull(entityList)
         }
     }
 
     suspend fun getAllDownloads(): List<DownloadModel> {
-        return downloadDao.getAllEntity().map { entity ->
-            entity.toDownloadModel()
-        }
+        return syncAndMapListNonNull(downloadDao.getAllEntity())
     }
 
     suspend fun getDownloadModelById(id: Int): DownloadModel? {
-        return downloadDao.find(id)?.toDownloadModel()
+        return syncAndMap(downloadDao.find(id))
     }
 
     suspend fun getDownloadModelByTag(tag: String): List<DownloadModel> {
-        return downloadDao.getAllEntityByTag(tag).map { entity ->
-            entity.toDownloadModel()
-        }
+        return syncAndMapListNonNull(downloadDao.getAllEntityByTag(tag))
     }
 
     suspend fun getDownloadModelByStatus(status: Status): List<DownloadModel> {
-        return downloadDao.getAllEntityByStatus(status.name).map { entity ->
-            entity.toDownloadModel()
-        }
+        return syncAndMapListNonNull(downloadDao.getAllEntityByStatus(status.name))
     }
 
     suspend fun getDownloadModelByIds(ids: List<Int>): List<DownloadModel?> {
         val entityList = downloadDao.getAllEntityByIds(ids)
-        return ids.map { id ->
-            entityList.find { it?.id == id }?.toDownloadModel()
-        }
+        val orderedEntities = ids.map { id -> entityList.find { it?.id == id } }
+        return syncAndMapList(orderedEntities)
     }
 
     suspend fun getDownloadModelByTags(tags: List<String>): List<DownloadModel> {
-        return downloadDao.getAllEntityByTags(tags).map { entity ->
-            entity.toDownloadModel()
-        }
+        return syncAndMapListNonNull(downloadDao.getAllEntityByTags(tags))
     }
 
     suspend fun getDownloadModelByStatuses(statuses: List<Status>): List<DownloadModel> {
-        return downloadDao.getAllEntityByStatuses(
+        val entityList = downloadDao.getAllEntityByStatuses(
             statuses.map {
                 it.name
             }
-        ).map { entity ->
-            entity.toDownloadModel()
-        }
+        )
+        return syncAndMapListNonNull(entityList)
     }
 
 }

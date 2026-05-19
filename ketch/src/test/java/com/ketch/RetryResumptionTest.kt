@@ -20,6 +20,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 class RetryResumptionTest {
@@ -50,26 +51,30 @@ class RetryResumptionTest {
     }
 
     @Test
-    fun `download with same url and path reuses existing filename and ID`() = runBlocking {
+    fun `download with same url and path produces same stable ID`() = runBlocking {
         val url = "https://example.com/file.zip"
-        val path = "/downloads"
-        val originalFileName = "file.zip"
+        val path = context.cacheDir.absolutePath
         
-        val originalId = FileUtil.getUniqueId(url, path, originalFileName)
+        val id1 = ketch.download(url = url, path = path)
+        val id2 = ketch.download(url = url, path = path)
 
-        val existingEntity = DownloadEntity(
-            id = originalId,
-            url = url,
-            path = path,
-            fileName = originalFileName,
-            status = Status.FAILED.toString()
-        )
+        assertThat(id1).isEqualTo(id2)
+    }
 
-        coEvery { downloadDao.findByUrlAndPath(url, path) } returns existingEntity
-        coEvery { downloadDao.find(originalId) } returns existingEntity
+    @Test
+    fun `download reuses same ID even if temp file exists`() = runBlocking {
+        val url = "https://example.com/file.zip"
+        val path = context.cacheDir.absolutePath // Use real path for file checks
+        
+        val id1 = ketch.download(url = url, path = path)
+        
+        // Simulate temp file existence
+        val fileName = FileUtil.getFileNameFromUrl(url)
+        val tempFile = File(path, fileName + ".temp")
+        tempFile.createNewFile()
 
-        val newId = ketch.download(url = url, path = path, fileName = "ignored.zip")
+        val id2 = ketch.download(url = url, path = path)
 
-        assertThat(newId).isEqualTo(originalId)
+        assertThat(id1).isEqualTo(id2)
     }
 }
