@@ -197,17 +197,15 @@ class Ketch private constructor(
         headers: HashMap<String, String> = hashMapOf(),
         supportPauseResume: Boolean = true,
     ): Int {
-        val downloadRequest = runBlocking {
-            prepareDownloadRequest(
-                url = url,
-                path = path,
-                fileName = fileName,
-                tag = tag,
-                headers = headers,
-                metaData = metaData,
-                supportPauseResume = supportPauseResume,
-            )
-        }
+        val downloadRequest = prepareDownloadRequest(
+            url = url,
+            path = path,
+            fileName = fileName,
+            tag = tag,
+            headers = headers,
+            metaData = metaData,
+            supportPauseResume = supportPauseResume,
+        )
         downloadManager.downloadAsync(downloadRequest)
         return downloadRequest.id
     }
