@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.Constraints
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -175,9 +176,11 @@ internal class DownloadManager(
 
         val inputData = inputDataBuilder.build()
 
-        val constraints = Constraints
-            .Builder()
-            .build()
+        val constraintsBuilder = Constraints.Builder()
+        if (downloadConfig.retryOnNetworkGain) {
+            constraintsBuilder.setRequiredNetworkType(NetworkType.CONNECTED)
+        }
+        val constraints = constraintsBuilder.build()
 
         val downloadWorkRequest = OneTimeWorkRequestBuilder<DownloadWorker>()
             .setInputData(inputData)

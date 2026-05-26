@@ -10,5 +10,9 @@ data class DownloadConfig(
     /**
      * Auto-retry download when it fails. Default true.
      */
-    val autoRetry: Boolean = true
+    val autoRetry: Boolean = true,
+    /**
+     * Auto-retry immediately when network connection is regained. Default true.
+     */
+    val retryOnNetworkGain: Boolean = true
 )
