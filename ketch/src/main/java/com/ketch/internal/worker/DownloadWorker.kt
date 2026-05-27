@@ -96,6 +96,11 @@ internal class DownloadWorker(
 
         return try {
             if (!isStopped) {
+                // WORKAROUND: Android 14+ has a race condition where calling setForeground()
+                // immediately after an expedited worker starts can trigger a
+                // ForegroundServiceStartNotAllowedException. This small delay allows
+                // the system to settle and correctly register the expedited exemption for this PID.
+                delay(200)
                 downloadNotificationManager?.sendUpdateNotification()?.let {
                     setForeground(
                         it
