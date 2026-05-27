@@ -6,6 +6,7 @@ import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.ketch.DownloadConfig
@@ -186,6 +187,7 @@ internal class DownloadManager(
             .setInputData(inputData)
             .addTag(DownloadConst.TAG_DOWNLOAD)
             .setConstraints(constraints)
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .build()
 
         // Checks if download id already present in database
