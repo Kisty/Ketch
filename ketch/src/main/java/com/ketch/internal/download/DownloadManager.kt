@@ -1,6 +1,7 @@
 package com.ketch.internal.download
 
 import android.content.Context
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
@@ -188,6 +189,11 @@ internal class DownloadManager(
             .addTag(DownloadConst.TAG_DOWNLOAD)
             .setConstraints(constraints)
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .setBackoffCriteria(
+                BackoffPolicy.EXPONENTIAL,
+                downloadConfig.backoffDelayInMs,
+                java.util.concurrent.TimeUnit.MILLISECONDS
+            )
             .build()
 
         // Checks if download id already present in database

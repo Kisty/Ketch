@@ -5,11 +5,12 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.ketch.KetchException
 import com.ketch.Status
 import com.ketch.internal.database.DatabaseInstance
 import com.ketch.internal.database.DownloadEntity
-import com.ketch.internal.download.DownloadTask
 import com.ketch.internal.download.ApiResponseHeaderChecker
+import com.ketch.internal.download.DownloadTask
 import com.ketch.internal.network.RetrofitInstance
 import com.ketch.internal.notification.DownloadNotificationManager
 import com.ketch.internal.utils.DownloadConst
@@ -20,6 +21,7 @@ import com.ketch.internal.utils.WorkUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -229,7 +231,12 @@ internal class DownloadWorker(
         } catch (e: Exception) {
             withContext(NonCancellable + Dispatchers.IO) {
                 val entity = downloadDao.find(id)
-                if (e !is CancellationException && downloadConfig.autoRetry) {
+                val isRetryable = e !is CancellationException && 
+                                e !is KetchException.NonRetryableException &&
+                                runAttemptCount < downloadConfig.maxAutoRetryCount &&
+                                downloadConfig.autoRetry
+
+                if (isRetryable) {
                     if (entity != null && isAnotherActiveOrSuccessful(entity)) {
                         downloadDao.update(
                             entity.copy(
@@ -275,7 +282,7 @@ internal class DownloadWorker(
 
                     }
                 } else {
-
+                    // Final Failure
                     downloadDao.find(id)?.copy(
                         status = Status.FAILED.toString(),
                         failureReason = e.message ?: "",
@@ -294,7 +301,13 @@ internal class DownloadWorker(
                     }
                 }
             }
-            if (e !is CancellationException && downloadConfig.autoRetry) {
+            
+            val shouldRetry = e !is CancellationException && 
+                              e !is KetchException.NonRetryableException &&
+                              runAttemptCount < downloadConfig.maxAutoRetryCount &&
+                              downloadConfig.autoRetry
+
+            if (shouldRetry) {
                 val entity = downloadDao.find(id)
                 if (entity != null && isAnotherActiveOrSuccessful(entity)) {
                     Result.failure(

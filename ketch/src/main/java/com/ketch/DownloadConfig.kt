@@ -12,6 +12,14 @@ data class DownloadConfig(
      */
     val autoRetry: Boolean = true,
     /**
+     * Max auto-retry count. Default 3.
+     */
+    val maxAutoRetryCount: Int = 3,
+    /**
+     * Initial backoff delay in milliseconds for auto-retry. Default 30000 (30s).
+     */
+    val backoffDelayInMs: Long = 30000,
+    /**
      * Auto-retry immediately when network connection is regained. Default true.
      */
     val retryOnNetworkGain: Boolean = true
