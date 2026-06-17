@@ -1,11 +1,14 @@
 package com.ketch.internal.worker
 
+import android.app.NotificationManager
 import android.content.Context
+import android.os.Build
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.ketch.KetchException
+import com.ketch.NotificationConfig
 import com.ketch.Status
 import com.ketch.internal.database.DatabaseInstance
 import com.ketch.internal.database.DownloadEntity
@@ -23,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 import java.io.File
 
 internal class DownloadWorker(
@@ -33,6 +37,7 @@ internal class DownloadWorker(
 
     companion object {
         private const val MAX_PERCENT = 100
+        private const val TAG = "DownloadWorker"
     }
 
     private var downloadNotificationManager: DownloadNotificationManager? = null
@@ -49,13 +54,13 @@ internal class DownloadWorker(
                 inputData.getString(DownloadConst.KEY_NOTIFICATION_CONFIG) ?: ""
             )
 
-        val notificationManager = DownloadNotificationManager(
-            context = context,
-            notificationConfig = notificationConfig,
-            requestId = downloadRequest.id,
-            fileName = downloadRequest.fileName
-        )
-        return notificationManager.sendUpdateNotification()!!
+        val id = downloadRequest.id
+        val fileName = downloadRequest.fileName
+
+        val notificationManager = requireNotificationManager(notificationConfig, id, fileName)
+        val sendUpdateNotification = notificationManager.createUpdateNotification()
+        trySetForeground(sendUpdateNotification!!)
+        return sendUpdateNotification
     }
 
     override suspend fun doWork(): Result {
@@ -86,12 +91,7 @@ internal class DownloadWorker(
         val supportPauseResume = downloadRequest.supportPauseResume // in case of false, we will not store total length info in DB
 
         if (notificationConfig.enabled) {
-            downloadNotificationManager = DownloadNotificationManager(
-                context = context,
-                notificationConfig = notificationConfig,
-                requestId = id,
-                fileName = fileName
-            )
+            requireNotificationManager(notificationConfig, id, fileName)
         }
 
         val downloadService = RetrofitInstance.getDownloadService()
@@ -103,11 +103,10 @@ internal class DownloadWorker(
                 // ForegroundServiceStartNotAllowedException. This small delay allows
                 // the system to settle and correctly register the expedited exemption for this PID.
                 delay(200)
-                downloadNotificationManager?.sendUpdateNotification()?.let {
-                    setForeground(
-                        it
-                    )
+                downloadNotificationManager?.createUpdateNotification()?.let { info ->
+                    trySetForeground(info)
                 }
+                downloadNotificationManager?.clearPreviousNotifications()
             }
 
             val headerChecker =
@@ -200,16 +199,16 @@ internal class DownloadWorker(
                         )
                     )
 
-                    if (!isStopped) {
-                        downloadNotificationManager?.sendUpdateNotification(
+                    if (!isStopped && progress < MAX_PERCENT) {
+                        downloadNotificationManager?.createUpdateNotification(
                             progress = progress,
                             speedInBPerMs = speed,
                             length = length,
                             update = true
-                        )?.let {
-                            setForeground(
-                                it
-                            )
+                        )?.let { info ->
+                            // Use direct NotificationManager for updates to avoid repeated startService/setForeground calls
+                            // which are prone to BackgroundServiceStartNotAllowedException on ACTION_STOP_FOREGROUND
+                            updateNotification(info)
                         }
                     }
                 }
@@ -227,6 +226,9 @@ internal class DownloadWorker(
             downloadNotificationManager?.sendDownloadSuccessNotification(
                 totalLength = total
             )
+            // Significant delay to allow WorkManager's SystemForegroundService to stabilize 
+            // and reduce race conditions with ACTION_STOP_FOREGROUND.
+            delay(1000)
             Result.success()
         } catch (e: Exception) {
             withContext(NonCancellable + Dispatchers.IO) {
@@ -325,6 +327,16 @@ internal class DownloadWorker(
 
     }
 
+    private fun requireNotificationManager(notificationConfig: NotificationConfig, id: Int, fileName: String): DownloadNotificationManager {
+        downloadNotificationManager = DownloadNotificationManager(
+            context = context,
+            notificationConfig = notificationConfig,
+            requestId = id,
+            fileName = fileName
+        )
+        return downloadNotificationManager!!
+    }
+
     private suspend fun isAnotherActiveOrSuccessful(entity: DownloadEntity): Boolean {
         val activeStatuses = listOf(
             Status.QUEUED.name,
@@ -339,6 +351,27 @@ internal class DownloadWorker(
             entity.id,
             activeStatuses
         ) > 0
+    }
+
+    private suspend fun trySetForeground(foregroundInfo: ForegroundInfo) {
+        try {
+            setForeground(foregroundInfo)
+        } catch (e: Exception) {
+            if (e is IllegalStateException || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && e.javaClass.name.contains("BackgroundServiceStartNotAllowedException"))) {
+                Timber.w(e, "Failed to set foreground state")
+            } else {
+                throw e
+            }
+        }
+    }
+
+    private fun updateNotification(foregroundInfo: ForegroundInfo) {
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.notify(foregroundInfo.notificationId, foregroundInfo.notification)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to update notification directly")
+        }
     }
 
 }
