@@ -28,6 +28,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
+import java.net.UnknownHostException
 
 internal class DownloadWorker(
     private val context: Context,
@@ -102,18 +103,33 @@ internal class DownloadWorker(
                 // immediately after an expedited worker starts can trigger a
                 // ForegroundServiceStartNotAllowedException. This small delay allows
                 // the system to settle and correctly register the expedited exemption for this PID.
-                delay(200)
+                delay(1000)
                 downloadNotificationManager?.createUpdateNotification()?.let { info ->
                     trySetForeground(info)
                 }
                 downloadNotificationManager?.clearPreviousNotifications()
             }
 
-            val headerChecker =
-                ApiResponseHeaderChecker(downloadRequest.url, downloadService, headers)
-            val latestETag = headerChecker.getHeaderValue(DownloadConst.ETAG_HEADER) ?: ""
-            val latestContentLength =
-                headerChecker.getHeaderValue(DownloadConst.CONTENT_LENGTH)?.toLongOrNull() ?: 0L
+            var latestETag = ""
+            var latestContentLength = 0L
+
+            // DNS/Network Retry Logic for Android 15 background restrictions
+            var attempts = 0
+            while (attempts < 3) {
+                try {
+                    val headerChecker =
+                        ApiResponseHeaderChecker(downloadRequest.url, downloadService, headers)
+                    latestETag = headerChecker.getHeaderValue(DownloadConst.ETAG_HEADER) ?: ""
+                    latestContentLength =
+                        headerChecker.getHeaderValue(DownloadConst.CONTENT_LENGTH)?.toLongOrNull() ?: 0L
+                    break
+                } catch (e: UnknownHostException) {
+                    attempts++
+                    if (attempts >= 3) throw e
+                    Timber.w("DNS lookup failed, retrying in 2s... (attempt $attempts)")
+                    delay(2000)
+                }
+            }
 
             val existingEntity = downloadDao.find(id)
             val existingETag = existingEntity?.eTag ?: ""
@@ -226,9 +242,6 @@ internal class DownloadWorker(
             downloadNotificationManager?.sendDownloadSuccessNotification(
                 totalLength = total
             )
-            // Significant delay to allow WorkManager's SystemForegroundService to stabilize 
-            // and reduce race conditions with ACTION_STOP_FOREGROUND.
-            delay(1000)
             Result.success()
         } catch (e: Exception) {
             withContext(NonCancellable + Dispatchers.IO) {
