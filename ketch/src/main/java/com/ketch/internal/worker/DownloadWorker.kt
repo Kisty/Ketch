@@ -31,8 +31,8 @@ import java.io.File
 import java.net.UnknownHostException
 
 internal class DownloadWorker(
-    private val context: Context,
-    private val workerParameters: WorkerParameters
+    context: Context,
+    workerParameters: WorkerParameters
 ) :
     CoroutineWorker(context, workerParameters) {
 
@@ -42,7 +42,7 @@ internal class DownloadWorker(
     }
 
     private var downloadNotificationManager: DownloadNotificationManager? = null
-    private val downloadDao = DatabaseInstance.getInstance(context).downloadDao()
+    private val downloadDao = DatabaseInstance.getInstance(applicationContext).downloadDao()
 
     override suspend fun getForegroundInfo(): ForegroundInfo {
         val downloadRequest =
@@ -342,7 +342,7 @@ internal class DownloadWorker(
 
     private fun requireNotificationManager(notificationConfig: NotificationConfig, id: Int, fileName: String): DownloadNotificationManager {
         downloadNotificationManager = DownloadNotificationManager(
-            context = context,
+            context = applicationContext,
             notificationConfig = notificationConfig,
             requestId = id,
             fileName = fileName
@@ -380,10 +380,10 @@ internal class DownloadWorker(
 
     private fun updateNotification(foregroundInfo: ForegroundInfo) {
         try {
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.notify(foregroundInfo.notificationId, foregroundInfo.notification)
         } catch (e: Exception) {
-            Timber.e(e, "Failed to update notification directly")
+            Timber.tag(TAG).e(e, "Failed to update notification directly")
         }
     }
 
