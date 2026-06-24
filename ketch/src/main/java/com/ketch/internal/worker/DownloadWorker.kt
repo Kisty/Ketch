@@ -59,9 +59,7 @@ internal class DownloadWorker(
         val fileName = downloadRequest.fileName
 
         val notificationManager = requireNotificationManager(notificationConfig, id, fileName)
-        val sendUpdateNotification = notificationManager.createUpdateNotification()
-        trySetForeground(sendUpdateNotification!!)
-        return sendUpdateNotification
+        return notificationManager.createUpdateNotification()!!
     }
 
     override suspend fun doWork(): Result {
@@ -126,7 +124,7 @@ internal class DownloadWorker(
                 } catch (e: UnknownHostException) {
                     attempts++
                     if (attempts >= 3) throw e
-                    Timber.w("DNS lookup failed, retrying in 2s... (attempt $attempts)")
+                    Timber.tag(TAG).w("DNS lookup failed, retrying in 2s... (attempt $attempts)")
                     delay(2000)
                 }
             }
@@ -367,11 +365,17 @@ internal class DownloadWorker(
     }
 
     private suspend fun trySetForeground(foregroundInfo: ForegroundInfo) {
+        // Non-expedited jobs (regular workers) cannot transition to foreground from background on Android 12+.
+        // However, we rely on the try-catch block below to handle this gracefully if the system denies it,
+        // because determining "isExpedited" can be version-dependent.
         try {
             setForeground(foregroundInfo)
         } catch (e: Exception) {
-            if (e is IllegalStateException || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && e.javaClass.name.contains("BackgroundServiceStartNotAllowedException"))) {
-                Timber.w(e, "Failed to set foreground state")
+            val exceptionName = e.javaClass.name
+            if (e is IllegalStateException || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && (exceptionName.contains("BackgroundServiceStartNotAllowedException") || exceptionName.contains("ForegroundServiceStartNotAllowedException")))) {
+                Timber.tag(TAG).w("Failed to set foreground state, falling back to direct notification: ${e.message}")
+                // Fallback: Show a regular notification if foreground transition is denied
+                updateNotification(foregroundInfo)
             } else {
                 throw e
             }
