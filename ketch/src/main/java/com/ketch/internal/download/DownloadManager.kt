@@ -254,7 +254,7 @@ internal class DownloadManager(
 
         workManager.enqueueUniqueWork(
             downloadRequest.id.toString(),
-            ExistingWorkPolicy.REPLACE,
+            ExistingWorkPolicy.KEEP,
             downloadWorkRequest
         )
     }
