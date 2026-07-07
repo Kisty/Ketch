@@ -18,9 +18,5 @@ data class DownloadConfig(
     /**
      * Initial backoff delay in milliseconds for auto-retry. Default 30000 (30s).
      */
-    val backoffDelayInMs: Long = 30000,
-    /**
-     * Auto-retry immediately when network connection is regained. Default true.
-     */
-    val retryOnNetworkGain: Boolean = true
+    val backoffDelayInMs: Long = 30000
 )

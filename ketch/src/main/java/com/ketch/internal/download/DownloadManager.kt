@@ -179,9 +179,8 @@ internal class DownloadManager(
         val inputData = inputDataBuilder.build()
 
         val constraintsBuilder = Constraints.Builder()
-        if (downloadConfig.retryOnNetworkGain) {
-            constraintsBuilder.setRequiredNetworkType(NetworkType.CONNECTED)
-        }
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+
         val constraints = constraintsBuilder.build()
 
         val downloadWorkRequest = OneTimeWorkRequestBuilder<DownloadWorker>()

@@ -2,7 +2,6 @@ package com.ketch
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
@@ -12,7 +11,6 @@ import com.ketch.internal.database.DatabaseInstance
 import com.ketch.internal.database.DownloadDao
 import com.ketch.internal.download.DownloadManager
 import com.ketch.internal.download.DownloadRequest
-import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
@@ -56,14 +54,8 @@ class ConnectivityRetryTest {
     }
 
     @Test
-    fun `default config has retryOnNetworkGain as true`() {
-        val config = DownloadConfig()
-        assertThat(config.retryOnNetworkGain).isTrue()
-    }
-
-    @Test
-    fun `when retryOnNetworkGain is true work request has CONNECTED constraint`() = runBlocking {
-        val downloadConfig = DownloadConfig(retryOnNetworkGain = true)
+    fun `default work request has CONNECTED constraint`() = runBlocking {
+        val downloadConfig = DownloadConfig()
         val downloadManager = DownloadManager(
             context = context,
             downloadDao = downloadDao,
@@ -85,34 +77,6 @@ class ConnectivityRetryTest {
         coVerify {
             workManager.enqueueUniqueWork(any(), any<ExistingWorkPolicy>(), match<OneTimeWorkRequest> {
                 it.workSpec.constraints.requiredNetworkType == NetworkType.CONNECTED
-            })
-        }
-    }
-
-    @Test
-    fun `when retryOnNetworkGain is false work request has NOT_REQUIRED constraint`() = runBlocking {
-        val downloadConfig = DownloadConfig(retryOnNetworkGain = false)
-        val downloadManager = DownloadManager(
-            context = context,
-            downloadDao = downloadDao,
-            workManager = workManager,
-            downloadConfig = downloadConfig,
-            notificationConfig = NotificationConfig(smallIcon = 1),
-            logger = logger
-        )
-
-        val request = DownloadRequest(
-            url = "https://example.com",
-            path = "/path",
-            fileName = "file.zip",
-            tag = "tag"
-        )
-
-        downloadManager.download(request)
-
-        coVerify {
-            workManager.enqueueUniqueWork(any(), any<ExistingWorkPolicy>(), match<OneTimeWorkRequest> {
-                it.workSpec.constraints.requiredNetworkType == NetworkType.NOT_REQUIRED
             })
         }
     }
