@@ -111,6 +111,8 @@ internal class DownloadWorker(
             var latestETag = ""
             var latestContentLength = 0L
 
+            if (isStopped) return Result.retry()
+
             // DNS/Network Retry Logic for Android 15 background restrictions
             var attempts = 0
             while (attempts < 3) {
