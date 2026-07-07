@@ -189,7 +189,7 @@ internal class DownloadManager(
             .setConstraints(constraints)
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .setBackoffCriteria(
-                BackoffPolicy.EXPONENTIAL,
+                BackoffPolicy.LINEAR,
                 downloadConfig.backoffDelayInMs,
                 java.util.concurrent.TimeUnit.MILLISECONDS
             )
