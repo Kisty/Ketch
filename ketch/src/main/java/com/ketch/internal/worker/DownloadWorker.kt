@@ -232,14 +232,6 @@ internal class DownloadWorker(
 
             val total = if (totalLength > 0) totalLength else File(dirPath, fileName).length()
 
-            // Final Progress Update before completion to avoid flicker to old percentages
-            setProgress(
-                workDataOf(
-                    DownloadConst.KEY_STATE to DownloadConst.PROGRESS,
-                    DownloadConst.KEY_PROGRESS to 100
-                )
-            )
-
             downloadDao.find(id)?.copy(
                 totalBytes = total,
                 downloadedBytes = total,
