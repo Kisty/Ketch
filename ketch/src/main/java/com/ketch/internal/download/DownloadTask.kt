@@ -4,6 +4,7 @@ import com.ketch.KetchException
 import com.ketch.internal.network.DownloadService
 import com.ketch.internal.utils.DownloadConst
 import com.ketch.internal.utils.FileUtil
+import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -115,11 +116,21 @@ internal class DownloadTask(
                         }
                     }
                 }
-                onProgress.invoke(totalBytes, totalBytes, 0F)
             }
         }
 
-        require(tempFile.renameTo(file)) { "Temp file rename failed" }
+        val tempLength = tempFile.length()
+        if (totalBytes > 0 && tempLength < totalBytes) {
+            throw IOException("Download interrupted: Temporary file size ($tempLength) is less than expected ($totalBytes) for $fileName")
+        }
+
+        Timber.d("Renaming temp file ${tempFile.name} to $fileName (size: $tempLength)")
+        if (!tempFile.renameTo(file)) {
+            val errorMsg = "Failed to rename temporary file ${tempFile.absolutePath} to ${file.absolutePath}. File exists: ${file.exists()}, temp exists: ${tempFile.exists()}"
+            Timber.e(errorMsg)
+            throw IOException(errorMsg)
+        }
+        onProgress.invoke(totalBytes, totalBytes, 0F)
 
         return totalBytes
     }
