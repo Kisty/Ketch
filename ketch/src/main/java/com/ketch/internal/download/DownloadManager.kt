@@ -63,8 +63,6 @@ internal class DownloadManager(
 
     init {
         scope.launch {
-            syncDbWithDisk()
-
             // Observe work infos, only for logging purpose
             workManager.getWorkInfosByTagFlow(DownloadConst.TAG_DOWNLOAD).flowOn(Dispatchers.IO)
                 .collectLatest { workInfos ->
@@ -198,17 +196,6 @@ internal class DownloadManager(
         // Checks if download id already present in database
         val existing = downloadDao.find(downloadRequest.id)
         if (existing != null) {
-
-            // Sync with disk: if SUCCESS but file missing, reset status
-            if (existing.status == Status.SUCCESS.name && !File(existing.path, existing.fileName).exists()) {
-                downloadDao.update(
-                    existing.copy(
-                        status = Status.FAILED.name,
-                        failureReason = "File missing from disk",
-                        lastModified = System.currentTimeMillis()
-                    )
-                )
-            }
 
             downloadDao.find(downloadRequest.id)?.copy(
                 userAction = UserAction.START.toString(),
@@ -368,11 +355,6 @@ internal class DownloadManager(
             entity.id,
             activeStatuses
         ) > 0
-    }
-
-    private suspend fun syncDbWithDisk() {
-        val allEntities = downloadDao.getAllEntity()
-        syncAndMapListNonNull(allEntities)
     }
 
     private suspend fun syncAndMap(entity: DownloadEntity?): DownloadModel? {
