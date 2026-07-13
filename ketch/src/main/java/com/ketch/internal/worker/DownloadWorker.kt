@@ -189,10 +189,14 @@ internal class DownloadWorker(
                 },
                 onProgress = { downloadedBytes, length, speed ->
 
-                    val progress = if (length != 0L) {
+                    var progress = if (length != 0L) {
                         ((downloadedBytes * 100) / length).toInt()
                     } else {
                         0
+                    }
+
+                    if (progress >= 100) {
+                        progress = 99
                     }
 
                     if (progressPercentage != progress) {
