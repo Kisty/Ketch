@@ -136,6 +136,13 @@ internal class DownloadWorker(
             val existingTotalBytes = existingEntity?.totalBytes ?: 0L
             val existingStatus = existingEntity?.status ?: ""
 
+            // Recovery rename if zip is missing but temp is complete
+            if (existingStatus == Status.SUCCESS.toString() && !File(dirPath, fileName).exists()) {
+                if (FileUtil.tryRecoveryRename(dirPath, fileName, existingTotalBytes)) {
+                    Timber.tag(TAG).i("Recovered $fileName from temp file.")
+                }
+            }
+
             // Check for early completion
             if (existingStatus == Status.SUCCESS.toString() &&
                 File(dirPath, fileName).exists() &&
@@ -219,6 +226,7 @@ internal class DownloadWorker(
                         )
                     )
 
+                    @Suppress("KotlinConstantConditions")
                     if (!isStopped && progress < MAX_PERCENT) {
                         downloadNotificationManager?.createUpdateNotification(
                             progress = progress,
@@ -272,7 +280,8 @@ internal class DownloadWorker(
                         )?.let { downloadDao.update(it) }
                     }
                 } else if (e is CancellationException) {
-                    if (downloadDao.find(id)?.userAction == UserAction.PAUSE.toString()) {
+                    val currentEntity = downloadDao.find(id)
+                    if (currentEntity?.userAction == UserAction.PAUSE.toString()) {
 
                         downloadDao.find(id)?.copy(
                             status = Status.PAUSED.toString(),
@@ -290,6 +299,8 @@ internal class DownloadWorker(
                             )
                         }
 
+                    } else if (currentEntity?.userAction == UserAction.START.toString()) {
+                        Timber.tag(TAG).d("Worker for $id cancelled because it's being replaced. Exiting quietly.")
                     } else {
 
                         downloadDao.find(id)?.copy(

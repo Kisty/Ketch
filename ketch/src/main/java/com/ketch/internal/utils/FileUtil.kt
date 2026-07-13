@@ -82,4 +82,20 @@ internal object FileUtil {
             tempFile.createNewFile()
         }
     }
+
+    fun tryRecoveryRename(path: String, fileName: String, expectedSize: Long): Boolean {
+        val file = File(path, fileName)
+        if (file.exists()) return true
+
+        val tempFile = getTempFileForFile(file)
+        if (tempFile.exists()) {
+            val currentSize = tempFile.length()
+            if (expectedSize > 0 && currentSize == expectedSize) {
+                if (tempFile.renameTo(file)) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
 }
